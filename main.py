@@ -105,7 +105,7 @@ class WallpaperWidget(QWidget):
         
         # 画像プレビュー
         self.image_label = QLabel()
-        self.image_label.setFixedSize(180, 110)  # 4列に収まるようサイズ調整
+        self.image_label.setFixedSize(200, 110)  # 4列に収まるようサイズ調整
         self.image_label.setStyleSheet("""
             QLabel {
                 border: 2px solid #404040;
@@ -128,12 +128,14 @@ class WallpaperWidget(QWidget):
         title_label.setFont(QFont("Arial", 9, QFont.Weight.Bold))
         title_label.setWordWrap(True)
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        title_label.setFixedSize(200, 30)  # 画像プレビューと同じ幅、高さ30px
         
         # 日付
         date_label = QLabel(self.wallpaper_info['date'])
         date_label.setFont(QFont("Arial", 8))
         date_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         date_label.setStyleSheet("color: #666;")
+        date_label.setFixedSize(200, 20)  # 画像プレビューと同じ幅、高さ20px
         
         layout.addWidget(self.image_label)
         layout.addWidget(title_label)
@@ -148,7 +150,7 @@ class WallpaperWidget(QWidget):
             if not pixmap.isNull():
                 # アスペクト比を保持してリサイズ
                 scaled_pixmap = pixmap.scaled(
-                    176, 106, 
+                    200, 110, 
                     Qt.AspectRatioMode.KeepAspectRatio,
                     Qt.TransformationMode.SmoothTransformation
                 )
@@ -186,9 +188,9 @@ class BingWallpaperApp(QMainWindow):
         
     def setup_ui(self):
         """UIの設定"""
-        self.setWindowTitle("🖼️ Linux Bing Wallpaper")
+        self.setWindowTitle("Linux Bing Wallpaper")
         self.setGeometry(200, 200, 1300, 800)  # 幅を1300に拡大
-        self.setMinimumSize(1200, 700)  # 最小サイズを設定
+        self.setMinimumSize(1300, 700)  # 最小サイズを設定
         
         # メインウィジェット
         main_widget = QWidget()
@@ -219,7 +221,7 @@ class BingWallpaperApp(QMainWindow):
         layout = QVBoxLayout()
         
         # タイトル
-        title_label = QLabel("🖼️ Bing Wallpaper")
+        title_label = QLabel(" Bing Wallpaper")
         title_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -508,7 +510,7 @@ class BingWallpaperApp(QMainWindow):
                 icon = QIcon(pixmap)
             self.tray_icon.setIcon(icon)
             
-            # トレイメニュー
+            # システムトレイメニュー
             tray_menu = QMenu()
             
             show_action = QAction("表示", self)
@@ -546,7 +548,7 @@ class BingWallpaperApp(QMainWindow):
                 self.activateWindow()
         
     def fetch_wallpapers(self):
-        """壁紙を取得"""
+        """壁紙を更新して取得"""
         self.fetch_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
         self.status_label.setText("壁紙を取得中...")

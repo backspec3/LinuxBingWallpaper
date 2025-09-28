@@ -1,0 +1,21 @@
+# LinuxWallpaper - Bing壁紙自動設定アプリ
+# 必要なPythonパッケージ
+
+# GUI フレームワーク
+PyQt6>=6.4.0
+
+# 画像処理
+Pillow>=9.0.0
+
+# HTTPリクエスト
+requests>=2.28.0
+
+# その他の標準ライブラリ (自動でインストール済み)
+# - sys
+# - os  
+# - json
+# - subprocess
+# - threading
+# - pathlib
+# - urllib.parse
+# - datetime
