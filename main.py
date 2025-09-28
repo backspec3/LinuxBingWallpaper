@@ -32,6 +32,120 @@ from PyQt6.QtGui import (
 
 from PIL import Image
 
+# ---------------------------------------------
+# アイコン関連ユーティリティ
+# ---------------------------------------------
+# カスタムアイコンの基底候補ファイル
+ICON_BASE_CANDIDATES = [
+    ("assets", "bingwall-ico.png"),        # ユーザーが追加したと述べたファイル名（ico表記）
+    ("asssets", "bingwall-ico.png"),       # タイポされた可能性のあるディレクトリ（フォールバック探索）
+    ("assets", "bingwall-icon.png"),       # 既存リポジトリ内のファイル
+    ("assets", "app_icon.png"),            # 追加されるかもしれない一般名称
+]
+
+ICON_GENERATED_PATTERN = "app_icon_{size}x{size}.png"
+ICON_SIZES = [16, 24, 32, 48, 64, 128, 256]
+
+_generated_icon_cache = {}
+
+def _find_base_icon():
+    """利用可能な基底アイコンファイルを探索して最初に見つかったパスを返す"""
+    script_dir = Path(__file__).parent
+    for folder, filename in ICON_BASE_CANDIDATES:
+        candidate = script_dir / folder / filename
+        if candidate.exists():
+            return candidate
+    return None
+
+def _generate_size_variants(base_path: Path):
+    """指定された基底PNGから各サイズの派生アイコンを `assets` フォルダ内に生成（存在しなければ）。
+    生成後パスをキャッシュしておく。失敗しても例外を伝播させずフォールバック可能。"""
+    global _generated_icon_cache
+    script_dir = Path(__file__).parent
+    assets_dir = script_dir / "assets"
+    assets_dir.mkdir(exist_ok=True)
+
+    try:
+        img = Image.open(base_path).convert("RGBA")
+    except Exception as e:
+        print(f"基底アイコン読み込み失敗: {e}")
+        return
+
+    for size in ICON_SIZES:
+        out_path = assets_dir / ICON_GENERATED_PATTERN.format(size=size)
+        if not out_path.exists():
+            try:
+                resized = img.resize((size, size), Image.Resampling.LANCZOS)
+                resized.save(out_path, format="PNG")
+            except Exception as e:
+                print(f"アイコンサイズ生成失敗 {size}px: {e}")
+                continue
+        _generated_icon_cache[size] = out_path
+
+def get_app_icon(size=64):
+    """指定サイズのQIconを返す。
+    1) 既に生成済みのサイズファイル(app_icon_{size}x{size}.png)があればそれを使用
+    2) 基底アイコン (bingwall-ico.png など) から生成（初回のみ）
+    3) 失敗時はフォールバック描画"""
+    try:
+        script_dir = Path(__file__).parent
+        target_icon_path = script_dir / "assets" / ICON_GENERATED_PATTERN.format(size=size)
+        if target_icon_path.exists():
+            return QIcon(str(target_icon_path))
+
+        # まだ生成されてない場合は基底アイコン探索→生成
+        base_icon = _find_base_icon()
+        if base_icon:
+            _generate_size_variants(base_icon)
+            if target_icon_path.exists():
+                return QIcon(str(target_icon_path))
+            # 生成後キャッシュにある別サイズからスケール（サイズ生成失敗時）
+            if _generated_icon_cache:
+                # 最も近いサイズを探してスケール
+                nearest_size = min(_generated_icon_cache.keys(), key=lambda s: abs(s - size))
+                pm = QPixmap(str(_generated_icon_cache[nearest_size]))
+                if not pm.isNull():
+                    scaled = pm.scaled(size, size, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation)
+                    return QIcon(scaled)
+        else:
+            # 基底アイコンが見つからない → 従来フォールバック
+            return create_fallback_icon(size)
+
+        # ここまでで取得できなければフォールバック
+        return create_fallback_icon(size)
+    except Exception as e:
+        print(f"アイコン取得エラー: {e}")
+        return create_fallback_icon(size)
+
+def create_fallback_icon(size=64):
+    """フォールバックアイコンを作成"""
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+    
+    painter = QPainter(pixmap)
+    painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    
+    # グラデーションを作成
+    gradient = QLinearGradient(0, 0, size, size)
+    gradient.setColorAt(0, QColor(33, 150, 243))  # Material Blue
+    gradient.setColorAt(1, QColor(25, 118, 210))  # Darker Blue
+    
+    # 円を描画
+    painter.setBrush(QBrush(gradient))
+    painter.setPen(Qt.PenStyle.NoPen)
+    painter.drawEllipse(2, 2, size-4, size-4)
+    
+    # 中央のカメラアイコン
+    painter.setPen(QColor(255, 255, 255))
+    painter.setBrush(QColor(255, 255, 255, 100))
+    center = size // 2
+    lens_radius = size // 4
+    painter.drawEllipse(center-lens_radius, center-lens_radius, 
+                       lens_radius*2, lens_radius*2)
+    
+    painter.end()
+    return QIcon(pixmap)
+
 class WallpaperFetcher(QThread):
     """壁紙取得用ワーカースレッド"""
     finished = pyqtSignal(dict)
@@ -172,6 +286,9 @@ class BingWallpaperApp(QMainWindow):
         
         self.wallpapers = []
         self.current_wallpaper = None
+        
+        # ウィンドウアイコンを設定
+        self.setWindowIcon(get_app_icon(64))
         
         # 設定
         self.settings = QSettings("BingWallpaper", "Settings")
@@ -502,13 +619,8 @@ class BingWallpaperApp(QMainWindow):
             self.tray_icon.setToolTip("Bing Wallpaper")
             
             # アイコンを設定
-            icon = QIcon.fromTheme("applications-graphics")
-            if icon.isNull():
-                # フォールバックアイコンを作成
-                pixmap = QPixmap(16, 16)
-                pixmap.fill(QColor("#2196F3"))
-                icon = QIcon(pixmap)
-            self.tray_icon.setIcon(icon)
+            tray_icon = get_app_icon(32)  # トレイ用は小さめのアイコン
+            self.tray_icon.setIcon(tray_icon)
             
             # システムトレイメニュー
             tray_menu = QMenu()
@@ -790,7 +902,8 @@ def main():
     app.setOrganizationName("LinuxWallpaper")
     
     # アプリケーションアイコン設定
-    app.setWindowIcon(QIcon.fromTheme("applications-graphics"))
+    app_icon = get_app_icon(64)
+    app.setWindowIcon(app_icon)
     
     # メインウィンドウ作成
     window = BingWallpaperApp()
