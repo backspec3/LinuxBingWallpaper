@@ -1,4 +1,4 @@
-# LinuxWallpaper - Bing壁紙自動設定アプリ
+# LinuxBingWallpaper - Bing壁紙自動設定アプリ
 # 必要なPythonパッケージ
 
 # GUI フレームワーク

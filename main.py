@@ -291,7 +291,7 @@ class BingWallpaperApp(QMainWindow):
         self.setWindowIcon(get_app_icon(64))
         
         # 設定
-        self.settings = QSettings("BingWallpaper", "Settings")
+        self.settings = QSettings("LinuxBingWallpaper", "Settings")
         
         self.setup_ui()
         self.setup_style()
@@ -899,7 +899,7 @@ def main():
     app = QApplication(sys.argv)
     app.setApplicationName("Bing Wallpaper")
     app.setApplicationVersion("2.0")
-    app.setOrganizationName("LinuxWallpaper")
+    app.setOrganizationName("LinuxBingWallpaper")
     
     # アプリケーションアイコン設定
     app_icon = get_app_icon(64)

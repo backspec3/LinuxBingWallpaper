@@ -1,4 +1,4 @@
-# LinuxWallpaper - Bing壁紙自動設定アプリ
+# LinuxBingWallpaper - Bing壁紙自動設定アプリ
 
 美しく現代的なLinux用Bing壁紙自動設定アプリケーション
 
@@ -8,7 +8,7 @@
 
 ## 概要
 
-LinuxWallpaperは、Microsoftの美しいBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
+LinuxBingWallpaperは、Microsoftの美しいBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
 
 ### 主な機能
 
@@ -49,7 +49,7 @@ sudo zypper install python3-pip python3-qt6 python3-Pillow
 ### 1. リポジトリのクローン
 ```bash
 git clone https://github.com/backspec3/LinuxWallpaper.git
-cd LinuxWallpaper
+cd LinuxBingWallpaper
 ```
 
 ### 2. 依存関係のインストール
@@ -110,7 +110,7 @@ KDE環境でのみテストしています、他のデスクトップ環境で�
 ## ファイル構成
 
 ```
-LinuxWallpaper/
+LinuxBingWallpaper/
 ├── main.py              # メインアプリケーション
 ├── README.md            # このファイル
 ├── requirements.txt     # Python依存関係
@@ -123,7 +123,7 @@ LinuxWallpaper/
 ## 設定ファイル
 
 設定は以下に自動保存されます：
-- `~/.config/LinuxWallpaper/settings.ini`
+- `~/.config/LinuxBingWallpaper/settings.ini`
 
 ## トラブルシューティング
 
@@ -147,7 +147,7 @@ LinuxWallpaper/
 4. **権限エラー**
    ```bash
    chmod +x main.py
-   chmod -R 755 ~/.config/LinuxWallpaper/
+   chmod -R 755 ~/.config/LinuxBingWallpaper/
    ```
 
 ### ログとデバッグ
