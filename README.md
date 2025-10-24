@@ -48,7 +48,7 @@ sudo zypper install python3-pip python3-qt6 python3-Pillow
 
 ### 1. リポジトリのクローン
 ```bash
-git clone https://github.com/creav3578/LinuxWallpaper.git
+git clone https://github.com/backspec3/LinuxWallpaper.git
 cd LinuxWallpaper
 ```
 
@@ -96,12 +96,13 @@ chmod +x main.py
 
 ## 対応デスクトップ環境
 
+KDE環境でのみテストしています、他のデスクトップ環境での動作はテスト出来ていません
 | デスクトップ環境 | 対応状況 | 設定方法 |
 |---|---|---|
-| GNOME | ✅ 完全対応 | gsettings |
+| GNOME | ✅ 対応 | gsettings |
 | KDE Plasma | ✅ 完全対応 | qdbus |
-| XFCE | ✅ 完全対応 | xfconf-query |
-| LXQt | ✅ 完全対応 | pcmanfm-qt |
+| XFCE | ✅ 対応 | xfconf-query |
+| LXQt | ✅ 対応 | pcmanfm-qt |
 | Cinnamon | ✅ 対応 | gsettings |
 | MATE | ✅ 対応 | gsettings |
 | その他 | 🔶 部分対応 | feh使用 |
@@ -189,19 +190,10 @@ def set_wallpaper_your_de(self, image_path):
 
 MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
 
-## 貢献
-
-プロジェクトへの貢献を歓迎します！
-
-1. このリポジトリをフォーク
-2. 機能ブランチを作成 (`git checkout -b feature/AmazingFeature`)
-3. 変更をコミット (`git commit -m 'Add some AmazingFeature'`)
-4. ブランチにプッシュ (`git push origin feature/AmazingFeature`)
-5. プルリクエストを作成
 
 ## 作者
 
-- **creav3578** - [GitHub](https://github.com/creav3578)
+- **backspec3** - [GitHub](https://github.com/backspec3)
 
 ## 謝辞
 
@@ -214,7 +206,6 @@ MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照してください
 ### v2.0 (2025-9-28)
 - PyQt6への移行
 - 8枚壁紙同時表示機能
-- 改善されたUI/UX
 - システムトレイサポート
 - 自動更新機能
 
