@@ -10,6 +10,8 @@
 
 LinuxBingWallpaperは、Microsoftの美しいBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
 
+![アプリのスクリーンショット](screenshots/LinuxWallpaperImage.png)
+
 ### 主な機能
 
 - 📸 **最新のBing壁紙を8枚取得** - Bing公式APIから高画質壁紙を自動ダウンロード
