@@ -37,10 +37,10 @@ from PIL import Image
 # ---------------------------------------------
 # カスタムアイコンの基底候補ファイル
 ICON_BASE_CANDIDATES = [
-    ("assets", "bingwall-ico.png"),        # ユーザーが追加したと述べたファイル名（ico表記）
-    ("asssets", "bingwall-ico.png"),       # タイポされた可能性のあるディレクトリ（フォールバック探索）
-    ("assets", "bingwall-icon.png"),       # 既存リポジトリ内のファイル
-    ("assets", "app_icon.png"),            # 追加されるかもしれない一般名称
+    ("assets", "bingwall-ico.png"),        
+    ("asssets", "bingwall-ico.png"),       
+    ("assets", "bingwall-icon.png"),       
+    ("assets", "app_icon.png"),            
 ]
 
 ICON_GENERATED_PATTERN = "app_icon_{size}x{size}.png"
@@ -160,7 +160,7 @@ class WallpaperFetcher(QThread):
         try:
             self.progress.emit("Bing APIに接続中...")
             
-            # Bing公式API（8枚取得）
+            # Bing公式API（8枚取得日本語版から）
             api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=ja-JP"
             
             response = requests.get(api_url, timeout=10)
