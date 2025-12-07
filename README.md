@@ -1,6 +1,6 @@
 # LinuxWallpaper - Bing壁紙自動設定アプリ
 
-美しく現代的なLinux用Bing壁紙自動設定アプリケーション
+Linux用Bing壁紙自動設定アプリケーション
 
 ![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)
 ![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green.svg)
@@ -8,7 +8,7 @@
 
 ## 概要
 
-LinuxBingWallpaperは、Microsoftの美しいBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
+LinuxBingWallpaperは、MicrosoftのBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
 
 ![アプリのスクリーンショット](screenshots/LinuxWallpaperImage.png)
 
