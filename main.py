@@ -395,7 +395,7 @@ class BingWallpaperApp(QMainWindow):
         desktop_layout = QVBoxLayout()
         
         self.desktop_combo = QComboBox()
-        self.desktop_combo.addItems(["自動検出", "GNOME", "KDE", "XFCE", "その他 (feh)"])
+        self.desktop_combo.addItems(["自動検出", "GNOME", "KDE", "XFCE", "COSMIC", "その他 (feh)"])
         
         desktop_layout.addWidget(QLabel("デスクトップ環境:"))
         desktop_layout.addWidget(self.desktop_combo)
@@ -764,6 +764,67 @@ class BingWallpaperApp(QMainWindow):
             if desktop_env == "gnome":
                 cmd = ["gsettings", "set", "org.gnome.desktop.background", 
                       "picture-uri", f"file://{self.current_wallpaper}"]
+            elif desktop_env == "cosmic":
+                # COSMIC環境用：設定ファイルを直接編集
+                try:
+                    cosmic_config_dir = Path.home() / ".config" / "cosmic" / "com.system76.CosmicBackground" / "v1"
+                    config_file = cosmic_config_dir / "all"
+                    
+                    if config_file.exists():
+                        # 既存の設定ファイルを読み込んで壁紙パスのみ更新
+                        with open(config_file, 'r') as f:
+                            content = f.read()
+                        
+                        # source: Path("...") の部分を置換
+                        import re
+                        new_content = re.sub(
+                            r'source:\s*Path\(".*?"\)',
+                            f'source: Path("{self.current_wallpaper}")',
+                            content
+                        )
+                        
+                        # 設定ファイルを書き込み
+                        with open(config_file, 'w') as f:
+                            f.write(new_content)
+                        
+                        # cosmic-bgプロセスを再起動して設定を反映
+                        subprocess.run(["killall", "-HUP", "cosmic-bg"], 
+                                     capture_output=True, timeout=5)
+                        
+                        self.status_label.setText("✅ 壁紙を設定しました（COSMIC）")
+                        
+                        if hasattr(self, 'tray_icon'):
+                            self.tray_icon.showMessage(
+                                "壁紙設定完了",
+                                "Bing壁紙を設定しました",
+                                QSystemTrayIcon.MessageIcon.Information,
+                                3000
+                            )
+                        return
+                    else:
+                        raise Exception(f"COSMIC設定ファイルが見つかりません: {config_file}")
+                        
+                except Exception as cosmic_error:
+                    # COSMICの設定に失敗した場合、フォールバックを試す
+                    print(f"COSMIC設定エラー: {cosmic_error}")
+                    fallback_commands = [
+                        ["feh", "--bg-scale", self.current_wallpaper],
+                    ]
+                    
+                    cmd = None
+                    for test_cmd in fallback_commands:
+                        try:
+                            subprocess.run(["which", test_cmd[0]], check=True, 
+                                         capture_output=True, timeout=5)
+                            cmd = test_cmd
+                            break
+                        except subprocess.CalledProcessError:
+                            continue
+                            
+                    if not cmd:
+                        raise Exception(f"COSMIC壁紙設定に失敗しました: {cosmic_error}\n"
+                                      "fehをインストールするか、手動で設定してください。")
+                    
             elif desktop_env == "kde":
                 # KDE Plasma用のコマンド（複数の方法を試す）
                 kde_commands = [
@@ -816,7 +877,7 @@ class BingWallpaperApp(QMainWindow):
                     raise Exception("壁紙設定用のコマンドが見つかりません。\n"
                                   "feh、nitrogen、またはgsettingsをインストールしてください。")
                 
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
                 self.status_label.setText("✅ 壁紙を設定しました")
@@ -854,7 +915,9 @@ class BingWallpaperApp(QMainWindow):
         desktop_session = os.environ.get('DESKTOP_SESSION', '').lower()
         xdg_desktop = os.environ.get('XDG_CURRENT_DESKTOP', '').lower()
         
-        if 'gnome' in desktop_session or 'gnome' in xdg_desktop:
+        if 'cosmic' in desktop_session or 'cosmic' in xdg_desktop:
+            return 'cosmic'
+        elif 'gnome' in desktop_session or 'gnome' in xdg_desktop:
             return 'gnome'
         elif 'kde' in desktop_session or 'kde' in xdg_desktop or 'plasma' in desktop_session:
             return 'kde'
