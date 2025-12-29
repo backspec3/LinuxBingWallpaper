@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
     QWidget, QPushButton, QLabel, QFrame, QProgressBar, QListWidget,
     QListWidgetItem, QScrollArea, QMessageBox, QSystemTrayIcon,
     QMenu, QFileDialog, QSplitter, QGroupBox, QTextEdit, QSlider,
-    QCheckBox, QComboBox, QSpacerItem, QSizePolicy
+    QCheckBox, QComboBox, QSpacerItem, QSizePolicy, QTabWidget
 )
 from PyQt6.QtCore import (
     Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, 
@@ -152,57 +152,138 @@ class WallpaperFetcher(QThread):
     error = pyqtSignal(str)
     progress = pyqtSignal(str)
     
-    def __init__(self, wallpaper_dir):
+    def __init__(self, wallpaper_dir, wallpaper_type="new"):
         super().__init__()
         self.wallpaper_dir = wallpaper_dir
+        self.wallpaper_type = wallpaper_type  # "new" or "spotlight"
         
     def run(self):
         try:
             self.progress.emit("Bing APIに接続中...")
             
-            # Bing公式API（8枚取得日本語版から）
-            api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=ja-JP"
-            
-            response = requests.get(api_url, timeout=10)
-            response.raise_for_status()
-            
-            data = response.json()
-            if not data.get('images'):
-                raise Exception("壁紙データが見つかりません")
-            
-            wallpapers = []
-            for i, image_data in enumerate(data['images']):
-                self.progress.emit(f"壁紙 {i+1}/8 をダウンロード中...")
-                
-                image_url = "https://www.bing.com" + image_data['url']
-                title = image_data.get('title', '不明')
-                copyright_info = image_data.get('copyright', '')
-                date = image_data.get('startdate', 'unknown')
-                
-                # 画像をダウンロード
-                img_response = requests.get(image_url, timeout=30)
-                img_response.raise_for_status()
-                
-                # ファイル名を生成
-                filename = f"bing_wallpaper_{date}.jpg"
-                file_path = self.wallpaper_dir / filename
-                
-                # 画像を保存
-                with open(file_path, 'wb') as f:
-                    f.write(img_response.content)
-                
-                wallpapers.append({
-                    'path': str(file_path),
-                    'title': title,
-                    'copyright': copyright_info,
-                    'date': date,
-                    'url': image_url
-                })
+            # 壁紙タイプに応じてAPIエンドポイントを選択
+            if self.wallpaper_type == "spotlight":
+                # スポットライト壁紙（Bing Wallpaper Archiveからランダム取得）
+                wallpapers = self.fetch_random_from_archive()
+            else:
+                # 新着壁紙API（8枚取得日本語版）
+                api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=ja-JP"
+                response = requests.get(api_url, timeout=10)
+                response.raise_for_status()
+                data = response.json()
+                wallpapers = self.fetch_new_wallpapers(data)
             
             self.finished.emit({'wallpapers': wallpapers})
             
         except Exception as e:
             self.error.emit(str(e))
+    
+    def fetch_random_from_archive(self):
+        """Bing Wallpaper Archiveからランダムに8枚取得"""
+        import random
+        
+        self.progress.emit("アーカイブAPIからメタデータを取得中...")
+        
+        # 日本のアーカイブAPIを取得
+        archive_url = "https://bing.npanuhin.me/JP/ja.json"
+        
+        try:
+            response = requests.get(archive_url, timeout=15)
+            response.raise_for_status()
+            archive_data = response.json()
+            
+            if not archive_data or len(archive_data) < 8:
+                raise Exception("アーカイブデータが不足しています")
+            
+            self.progress.emit(f"アーカイブから{len(archive_data)}枚の壁紙を発見...")
+            
+            # ランダムに8枚選択
+            selected_images = random.sample(archive_data, min(8, len(archive_data)))
+            
+            wallpapers = []
+            for i, image_data in enumerate(selected_images):
+                self.progress.emit(f"スポットライト壁紙 {i+1}/8 をダウンロード中...")
+                
+                # 画像URLを取得
+                image_url = image_data.get('url')
+                if not image_url:
+                    continue
+                
+                title = image_data.get('title', '不明')
+                copyright_info = image_data.get('copyright', '')
+                date = image_data.get('date', 'unknown')
+                description = image_data.get('description', '')
+                
+                # 画像をダウンロード
+                try:
+                    img_response = requests.get(image_url, timeout=30)
+                    img_response.raise_for_status()
+                    
+                    # ファイル名を生成
+                    filename = f"bing_archive_{date.replace('-', '')}.jpg"
+                    file_path = self.wallpaper_dir / filename
+                    
+                    # 画像を保存
+                    with open(file_path, 'wb') as f:
+                        f.write(img_response.content)
+                    
+                    wallpapers.append({
+                        'path': str(file_path),
+                        'title': title if title else description[:50] if description else date,
+                        'copyright': copyright_info,
+                        'date': date,
+                        'url': image_url
+                    })
+                except Exception as e:
+                    print(f"画像ダウンロードエラー ({date}): {e}")
+                    continue
+            
+            return wallpapers
+            
+        except Exception as e:
+            # フォールバック: 通常のBing APIを使用
+            self.progress.emit("アーカイブ取得失敗、通常APIを使用...")
+            api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=8&n=8&mkt=ja-JP"
+            response = requests.get(api_url, timeout=10)
+            response.raise_for_status()
+            data = response.json()
+            return self.fetch_new_wallpapers(data)
+    
+    def fetch_new_wallpapers(self, data):
+        """新着壁紙を処理"""
+        wallpapers = []
+        if not data.get('images'):
+            raise Exception("壁紙データが見つかりません")
+        
+        for i, image_data in enumerate(data['images']):
+            self.progress.emit(f"壁紙 {i+1}/8 をダウンロード中...")
+            
+            image_url = "https://www.bing.com" + image_data['url']
+            title = image_data.get('title', '不明')
+            copyright_info = image_data.get('copyright', '')
+            date = image_data.get('startdate', 'unknown')
+            
+            # 画像をダウンロード
+            img_response = requests.get(image_url, timeout=30)
+            img_response.raise_for_status()
+            
+            # ファイル名を生成
+            filename = f"bing_wallpaper_{date}.jpg"
+            file_path = self.wallpaper_dir / filename
+            
+            # 画像を保存
+            with open(file_path, 'wb') as f:
+                f.write(img_response.content)
+            
+            wallpapers.append({
+                'path': str(file_path),
+                'title': title,
+                'copyright': copyright_info,
+                'date': date,
+                'url': image_url
+            })
+        
+        return wallpapers
 
 class WallpaperWidget(QWidget):
     """壁紙プレビューウィジェット"""
@@ -285,6 +366,7 @@ class BingWallpaperApp(QMainWindow):
         self.wallpaper_dir.mkdir(parents=True, exist_ok=True)
         
         self.wallpapers = []
+        self.spotlight_wallpapers = []
         self.current_wallpaper = None
         
         # ウィンドウアイコンを設定
@@ -338,7 +420,7 @@ class BingWallpaperApp(QMainWindow):
         layout = QVBoxLayout()
         
         # タイトル
-        title_label = QLabel(" Bing Wallpaper")
+        title_label = QLabel(" Linux Bing Wallpaper")
         title_label.setFont(QFont("Arial", 18, QFont.Weight.Bold))
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
@@ -442,20 +524,52 @@ class BingWallpaperApp(QMainWindow):
         gallery_title = QLabel("壁紙ギャラリー")
         gallery_title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         
-        # スクロールエリア
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # タブウィジェット
+        self.tab_widget = QTabWidget()
+        
+        # 新着タブ
+        new_tab = QWidget()
+        new_layout = QVBoxLayout()
+        
+        scroll_area_new = QScrollArea()
+        scroll_area_new.setWidgetResizable(True)
+        scroll_area_new.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         
         self.gallery_widget = QWidget()
         self.gallery_layout = QGridLayout()
-        self.gallery_layout.setSpacing(10)  # 4列に収まるよう間隔を調整
+        self.gallery_layout.setSpacing(10)
         self.gallery_widget.setLayout(self.gallery_layout)
         
-        scroll_area.setWidget(self.gallery_widget)
+        scroll_area_new.setWidget(self.gallery_widget)
+        new_layout.addWidget(scroll_area_new)
+        new_tab.setLayout(new_layout)
+        
+        # スポットライトタブ
+        spotlight_tab = QWidget()
+        spotlight_layout = QVBoxLayout()
+        
+        scroll_area_spotlight = QScrollArea()
+        scroll_area_spotlight.setWidgetResizable(True)
+        scroll_area_spotlight.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        
+        self.spotlight_gallery_widget = QWidget()
+        self.spotlight_gallery_layout = QGridLayout()
+        self.spotlight_gallery_layout.setSpacing(10)
+        self.spotlight_gallery_widget.setLayout(self.spotlight_gallery_layout)
+        
+        scroll_area_spotlight.setWidget(self.spotlight_gallery_widget)
+        spotlight_layout.addWidget(scroll_area_spotlight)
+        spotlight_tab.setLayout(spotlight_layout)
+        
+        # タブに追加
+        self.tab_widget.addTab(new_tab, "新着")
+        self.tab_widget.addTab(spotlight_tab, "スポットライト")
+        
+        # タブ切り替え時のイベント
+        self.tab_widget.currentChanged.connect(self.on_tab_changed)
         
         layout.addWidget(gallery_title)
-        layout.addWidget(scroll_area)
+        layout.addWidget(self.tab_widget)
         
         panel.setLayout(layout)
         return panel
@@ -610,6 +724,35 @@ class BingWallpaperApp(QMainWindow):
                 background-color: #2196F3;
                 border-radius: 4px;
             }
+            
+            QTabWidget::pane {
+                border: 2px solid #404040;
+                border-radius: 8px;
+                background-color: #1e1e1e;
+                top: -1px;
+            }
+            
+            QTabBar::tab {
+                background-color: #2d2d2d;
+                color: #ffffff;
+                border: 2px solid #404040;
+                border-bottom: none;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                padding: 10px 20px;
+                margin-right: 2px;
+                min-width: 120px;
+            }
+            
+            QTabBar::tab:selected {
+                background-color: #2196F3;
+                color: #ffffff;
+                border-color: #2196F3;
+            }
+            
+            QTabBar::tab:hover:!selected {
+                background-color: #404040;
+            }
         """)
         
     def setup_system_tray(self):
@@ -663,13 +806,20 @@ class BingWallpaperApp(QMainWindow):
         """壁紙を更新して取得"""
         self.fetch_btn.setEnabled(False)
         self.progress_bar.setVisible(True)
-        self.status_label.setText("壁紙を取得中...")
         
-        # 既存の壁紙をクリア
-        self.clear_gallery()
+        # 現在のタブに応じて取得する壁紙タイプを決定
+        current_tab = self.tab_widget.currentIndex()
+        wallpaper_type = "spotlight" if current_tab == 1 else "new"
+        
+        if wallpaper_type == "spotlight":
+            self.status_label.setText("スポットライト壁紙を取得中...")
+            self.clear_spotlight_gallery()
+        else:
+            self.status_label.setText("壁紙を取得中...")
+            self.clear_gallery()
         
         # ワーカースレッドで取得
-        self.fetcher = WallpaperFetcher(self.wallpaper_dir)
+        self.fetcher = WallpaperFetcher(self.wallpaper_dir, wallpaper_type)
         self.fetcher.finished.connect(self.on_wallpapers_fetched)
         self.fetcher.error.connect(self.on_fetch_error)
         self.fetcher.progress.connect(self.on_fetch_progress)
@@ -677,12 +827,20 @@ class BingWallpaperApp(QMainWindow):
         
     def on_wallpapers_fetched(self, result):
         """壁紙取得完了時の処理"""
-        self.wallpapers = result['wallpapers']
-        self.populate_gallery()
+        # 現在のタブに応じて保存先を決定
+        current_tab = self.tab_widget.currentIndex()
+        
+        if current_tab == 1:  # スポットライトタブ
+            self.spotlight_wallpapers = result['wallpapers']
+            self.populate_spotlight_gallery()
+            self.status_label.setText(f"✅ {len(self.spotlight_wallpapers)}枚のスポットライト壁紙を取得しました")
+        else:  # 新着タブ
+            self.wallpapers = result['wallpapers']
+            self.populate_gallery()
+            self.status_label.setText(f"✅ {len(self.wallpapers)}枚の壁紙を取得しました")
         
         self.fetch_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
-        self.status_label.setText(f"✅ {len(self.wallpapers)}枚の壁紙を取得しました")
         
     def on_fetch_error(self, error_msg):
         """壁紙取得エラー時の処理"""
@@ -702,6 +860,13 @@ class BingWallpaperApp(QMainWindow):
             child = self.gallery_layout.takeAt(0)
             if child.widget():
                 child.widget().deleteLater()
+    
+    def clear_spotlight_gallery(self):
+        """スポットライトギャラリーをクリア"""
+        while self.spotlight_gallery_layout.count():
+            child = self.spotlight_gallery_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
                 
     def populate_gallery(self):
         """ギャラリーに壁紙を表示（8枚を4x2配置）"""
@@ -718,14 +883,30 @@ class BingWallpaperApp(QMainWindow):
             if col >= max_cols:
                 col = 0
                 row += 1
+    
+    def populate_spotlight_gallery(self):
+        """スポットライトギャラリーに壁紙を表示（8枚を4x2配置）"""
+        row, col = 0, 0
+        max_cols = 4  # 4列で8枚を2行に配置
+        
+        for wallpaper in self.spotlight_wallpapers:
+            widget = WallpaperWidget(wallpaper)
+            widget.clicked.connect(self.on_wallpaper_selected)
+            
+            self.spotlight_gallery_layout.addWidget(widget, row, col)
+            
+            col += 1
+            if col >= max_cols:
+                col = 0
+                row += 1
                 
     def on_wallpaper_selected(self, wallpaper_path):
         """壁紙選択時の処理"""
         self.current_wallpaper = wallpaper_path
         
-        # 選択された壁紙の情報を取得
+        # 選択された壁紙の情報を取得（新着とスポットライト両方から探す）
         selected_info = None
-        for wallpaper in self.wallpapers:
+        for wallpaper in self.wallpapers + self.spotlight_wallpapers:
             if wallpaper['path'] == wallpaper_path:
                 selected_info = wallpaper
                 break
@@ -748,6 +929,16 @@ class BingWallpaperApp(QMainWindow):
             self.set_btn.setEnabled(True)
             
             self.status_label.setText(f"壁紙を選択: {selected_info['title'][:30]}...")
+    
+    def on_tab_changed(self, index):
+        """タブ切り替え時の処理"""
+        if index == 0:
+            self.status_label.setText("新着壁紙タブ")
+        elif index == 1:
+            self.status_label.setText("スポットライト壁紙タブ")
+            # スポットライトタブに切り替えた際、まだ壁紙がなければ取得
+            if not self.spotlight_wallpapers:
+                QTimer.singleShot(500, self.fetch_wallpapers)
             
     def set_wallpaper(self):
         """デスクトップ壁紙を設定"""
