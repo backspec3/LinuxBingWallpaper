@@ -563,7 +563,7 @@ class BingWallpaperApp(QMainWindow):
         
         # タブに追加
         self.tab_widget.addTab(new_tab, "新着")
-        self.tab_widget.addTab(spotlight_tab, "スポットライト")
+        self.tab_widget.addTab(spotlight_tab, "オススメ")
         
         # タブ切り替え時のイベント
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
