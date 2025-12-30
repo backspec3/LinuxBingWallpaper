@@ -1042,9 +1042,115 @@ class BingWallpaperApp(QMainWindow):
                                   "plasma-apply-wallpaperimage または qdbus をインストールしてください。")
                     
             elif desktop_env == "xfce":
-                cmd = ["xfconf-query", "-c", "xfce4-desktop", 
-                      "-p", "/backdrop/screen0/monitor0/workspace0/last-image", 
-                      "-s", self.current_wallpaper]
+                import time
+                
+                wallpaper_path = os.path.abspath(self.current_wallpaper)
+                
+                # 壁紙ファイルが存在することを確認
+                if not os.path.exists(wallpaper_path):
+                    raise Exception(f"壁紙ファイルが見つかりません: {wallpaper_path}")
+                
+                # XFCE環境：複数の方法を順番に試す
+                success = False
+                
+                # 方法1: xfconf-queryで既存プロパティを確認・設定
+                try:
+                    # 最初に、デスクトップの全プロパティを一覧取得
+                    list_cmd = ["xfconf-query", "-c", "xfce4-desktop", "-l"]
+                    list_result = subprocess.run(list_cmd, capture_output=True, text=True, timeout=10)
+                    
+                    if list_result.returncode == 0:
+                        properties = list_result.stdout.strip().split('\n')
+                        # 実在するlast-imageプロパティを探す
+                        image_props = [p for p in properties if 'last-image' in p and p.strip()]
+                        
+                        if image_props:
+                            # すべてのワークスペース/モニタに壁紙を設定
+                            for prop in image_props:
+                                cmd = ["xfconf-query", "-c", "xfce4-desktop", "-p", prop, "-s", wallpaper_path]
+                                result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                                if result.returncode == 0:
+                                    success = True
+                        else:
+                            # プロパティが見つからない場合、作成を試みる
+                            cmd = ["xfconf-query", "-c", "xfce4-desktop",
+                                 "-p", "/backdrop/screen0/monitor0/workspace0/last-image",
+                                 "-t", "string", "-s", wallpaper_path, "--create"]
+                            result = subprocess.run(cmd, capture_output=True, text=True, timeout=10)
+                            if result.returncode == 0:
+                                success = True
+                except Exception:
+                    pass
+                
+                if success:
+                    # 設定が実際に保存されたか確認
+                    time.sleep(0.5)
+                    
+                    # xfdesktopを再起動
+                    # 1. xfdesktopを複数の方法で終了
+                    subprocess.run(["killall", "-9", "xfdesktop"], capture_output=True, timeout=5)
+                    time.sleep(1)
+                    
+                    # 2. xfdesktopをENVを設定して再起動
+                    env = os.environ.copy()
+                    env['DISPLAY'] = os.environ.get('DISPLAY', ':0')
+                    
+                    # xfdesktopを複数プロセス立ち上げ対策
+                    subprocess.run(["pkill", "-f", "xfdesktop"], capture_output=True, timeout=5)
+                    time.sleep(0.5)
+                    
+                    # 新しいxfdesktopプロセスを起動
+                    subprocess.Popen(
+                        ["xfdesktop", "--sm-client-disable"],
+                        env=env,
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.PIPE
+                    )
+                    
+                    time.sleep(4)  # 十分に待機
+                    
+                    self.status_label.setText("✅ 壁紙を設定しました")
+                    
+                    if hasattr(self, 'tray_icon'):
+                        self.tray_icon.showMessage(
+                            "壁紙設定完了",
+                            "Bing壁紙を設定しました",
+                            QSystemTrayIcon.MessageIcon.Information,
+                            3000
+                        )
+                    return
+                
+                # 方法2: feh/nitrogenをフォールバックで試す
+                fallback_commands = [
+                    ["feh", "--bg-scale", wallpaper_path],
+                    ["nitrogen", "--set-scaled", wallpaper_path],
+                ]
+                
+                for fb_cmd in fallback_commands:
+                    try:
+                        # コマンドが存在するか確認
+                        which_result = subprocess.run(["which", fb_cmd[0]], capture_output=True, timeout=5)
+                        if which_result.returncode == 0:
+                            result = subprocess.run(fb_cmd, capture_output=True, text=True, timeout=10)
+                            if result.returncode == 0:
+                                self.status_label.setText("✅ 壁紙を設定しました")
+                                
+                                if hasattr(self, 'tray_icon'):
+                                    self.tray_icon.showMessage(
+                                        "壁紙設定完了",
+                                        "Bing壁紙を設定しました",
+                                        QSystemTrayIcon.MessageIcon.Information,
+                                        3000
+                                    )
+                                return
+                    except subprocess.CalledProcessError:
+                        continue
+                    except Exception:
+                        continue
+                
+                # すべて失敗した場合
+                raise Exception("XFCE壁紙設定に失敗しました。\n"
+                              "feh、nitrogen、またはxfconf-queryをインストールしてください。")
             else:
                 # フォールバック：複数の選択肢を試す
                 fallback_commands = [
