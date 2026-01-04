@@ -83,7 +83,6 @@ def _generate_size_variants(base_path: Path):
     try:
         img = Image.open(base_path).convert("RGBA")
     except Exception as e:
-        print(f"基底アイコン読み込み失敗: {e}")
         return
 
     for size in ICON_SIZES:
@@ -93,7 +92,6 @@ def _generate_size_variants(base_path: Path):
                 resized = img.resize((size, size), Image.Resampling.LANCZOS)
                 resized.save(out_path, format="PNG")
             except Exception as e:
-                print(f"アイコンサイズ生成失敗 {size}px: {e}")
                 continue
         _generated_icon_cache[size] = out_path
 
@@ -129,7 +127,6 @@ def get_app_icon(size=64):
         # ここまでで取得できなければフォールバック
         return create_fallback_icon(size)
     except Exception as e:
-        print(f"アイコン取得エラー: {e}")
         return create_fallback_icon(size)
 
 def create_fallback_icon(size=64):
@@ -177,7 +174,7 @@ class SingleInstance(QObject):
         
         if socket.waitForConnected(500):
             # 接続できた＝既存インスタンスあり
-            print("既存のインスタンスが見つかりました。アクティブ化を要求します。")
+            # print("既存のインスタンスが見つかりました。アクティブ化を要求します。")
             socket.write(b"SHOW")
             socket.waitForBytesWritten(1000)
             socket.disconnectFromServer()
@@ -191,7 +188,7 @@ class SingleInstance(QObject):
         
         self.server = QLocalServer()
         if not self.server.listen(self.key):
-            print(f"サーバー開始失敗: {self.server.errorString()}")
+            # print(f"サーバー開始失敗: {self.server.errorString()}")
             return False
             
         self.server.newConnection.connect(self.on_new_connection)
@@ -303,7 +300,7 @@ class WallpaperFetcher(QThread):
                         'url': image_url
                     })
                 except Exception as e:
-                    print(f"画像ダウンロードエラー ({date}): {e}")
+                    # print(f"画像ダウンロードエラー ({date}): {e}")
                     continue
             
             return wallpapers
@@ -1200,7 +1197,7 @@ class BingWallpaperApp(QMainWindow):
                         
                 except Exception as cosmic_error:
                     # COSMICの設定に失敗した場合、フォールバックを試す
-                    print(f"COSMIC設定エラー: {cosmic_error}")
+                    # print(f"COSMIC設定エラー: {cosmic_error}")
                     fallback_commands = [
                         ["feh", "--bg-scale", self.current_wallpaper],
                     ]
@@ -1477,7 +1474,7 @@ def main():
         sys.exit(0)
     
     if not single_instance.start_server():
-        print("警告: 単一インスタンスサーバーの開始に失敗しました")
+        pass # print("警告: 単一インスタンスサーバーの開始に失敗しました")
     
     # メインウィンドウ作成
     window = BingWallpaperApp()
