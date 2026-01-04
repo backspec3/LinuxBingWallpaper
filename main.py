@@ -238,7 +238,10 @@ class WallpaperFetcher(QThread):
                 data = response.json()
                 wallpapers = self.fetch_new_wallpapers(data)
             
-            self.finished.emit({'wallpapers': wallpapers})
+            self.finished.emit({
+                'wallpapers': wallpapers,
+                'type': self.wallpaper_type
+            })
             
         except Exception as e:
             self.error.emit(str(e))
@@ -451,8 +454,8 @@ class BingWallpaperApp(QMainWindow):
         # 自動更新タイマーを初期化（標準でオン）
         self.setup_auto_update()
         
-        # 起動時に壁紙を取得
-        QTimer.singleShot(1000, self.fetch_wallpapers)
+        # 起動時にバックグラウンドで壁紙を取得（新着とスポットライト両方）
+        QTimer.singleShot(1000, self.start_background_fetches)
         
     def setup_ui(self):
         """UIの設定"""
@@ -956,45 +959,84 @@ class BingWallpaperApp(QMainWindow):
                 title_part = title_text.split(": ", 1)[1]
                 self.current_title.setText(f"タイトル: {title_part}")
         
-    def fetch_wallpapers(self):
+    def start_background_fetches(self):
+        """起動時に両方の壁紙をバックグラウンドで取得"""
+        self.fetch_wallpapers(wallpaper_type="new")
+        # API負荷分散のため少し遅延させる
+        QTimer.singleShot(2000, lambda: self.fetch_wallpapers(wallpaper_type="spotlight"))
+
+    def fetch_wallpapers(self, wallpaper_type=None):
         """壁紙を更新して取得"""
-        self.fetch_btn.setEnabled(False)
-        self.progress_bar.setVisible(True)
+        # タイプが指定されていない場合は現在のタブから決定
+        if wallpaper_type is None:
+            current_tab = self.tab_widget.currentIndex()
+            wallpaper_type = "spotlight" if current_tab == 1 else "new"
         
-        # 現在のタブに応じて取得する壁紙タイプを決定
-        current_tab = self.tab_widget.currentIndex()
-        wallpaper_type = "spotlight" if current_tab == 1 else "new"
-        
+        # タイプに応じた処理
         if wallpaper_type == "spotlight":
-            self.status_label.setText(tr("fetching_spotlight"))
-            self.clear_spotlight_gallery()
-        else:
-            self.status_label.setText(tr("fetching_wallpapers"))
-            self.clear_gallery()
-        
-        # ワーカースレッドで取得
-        self.fetcher = WallpaperFetcher(self.wallpaper_dir, wallpaper_type)
-        self.fetcher.finished.connect(self.on_wallpapers_fetched)
-        self.fetcher.error.connect(self.on_fetch_error)
-        self.fetcher.progress.connect(self.on_fetch_progress)
-        self.fetcher.start()
+            # 既に実行中ならスキップ
+            if hasattr(self, 'fetcher_spotlight') and self.fetcher_spotlight.isRunning():
+                return
+                
+            # UI更新（現在のタブが表示中の場合のみ）
+            if self.tab_widget.currentIndex() == 1:
+                self.status_label.setText(tr("fetching_spotlight"))
+                self.clear_spotlight_gallery()
+                self.fetch_btn.setEnabled(False)
+                self.progress_bar.setVisible(True)
+            
+            # スポットライト用フェッチャー
+            self.fetcher_spotlight = WallpaperFetcher(self.wallpaper_dir, "spotlight")
+            self.fetcher_spotlight.finished.connect(self.on_wallpapers_fetched)
+            self.fetcher_spotlight.error.connect(self.on_fetch_error)
+            self.fetcher_spotlight.progress.connect(self.on_fetch_progress)
+            self.fetcher_spotlight.start()
+            
+        else: # new
+            # 既に実行中ならスキップ
+            if hasattr(self, 'fetcher_new') and self.fetcher_new.isRunning():
+                return
+
+            # UI更新（現在のタブが表示中の場合のみ）
+            if self.tab_widget.currentIndex() == 0:
+                self.status_label.setText(tr("fetching_wallpapers"))
+                self.clear_gallery()
+                self.fetch_btn.setEnabled(False)
+                self.progress_bar.setVisible(True)
+            
+            # 新着用フェッチャー
+            self.fetcher_new = WallpaperFetcher(self.wallpaper_dir, "new")
+            self.fetcher_new.finished.connect(self.on_wallpapers_fetched)
+            self.fetcher_new.error.connect(self.on_fetch_error)
+            self.fetcher_new.progress.connect(self.on_fetch_progress)
+            self.fetcher_new.start()
         
     def on_wallpapers_fetched(self, result):
         """壁紙取得完了時の処理"""
-        # 現在のタブに応じて保存先を決定
+        fetched_type = result.get('type', 'new')
+        wallpapers = result['wallpapers']
         current_tab = self.tab_widget.currentIndex()
         
-        if current_tab == 1:  # スポットライトタブ
-            self.spotlight_wallpapers = result['wallpapers']
-            self.populate_spotlight_gallery()
-            self.status_label.setText(tr("fetched_success_spotlight", count=len(self.spotlight_wallpapers)))
-        else:  # 新着タブ
-            self.wallpapers = result['wallpapers']
-            self.populate_gallery()
-            self.status_label.setText(tr("fetched_success", count=len(self.wallpapers)))
+        if fetched_type == "spotlight":
+            self.spotlight_wallpapers = wallpapers
+            # スポットライトタブが表示中の場合のみ即時反映
+            if current_tab == 1:
+                self.populate_spotlight_gallery()
+                self.status_label.setText(tr("fetched_success_spotlight", count=len(self.spotlight_wallpapers)))
+                self.fetch_btn.setEnabled(True)
+                self.progress_bar.setVisible(False)
+            
+        else:  # new
+            self.wallpapers = wallpapers
+            # 新着タブが表示中の場合のみ即時反映
+            if current_tab == 0:
+                self.populate_gallery()
+                self.status_label.setText(tr("fetched_success", count=len(self.wallpapers)))
+                self.fetch_btn.setEnabled(True)
+                self.progress_bar.setVisible(False)
         
-        self.fetch_btn.setEnabled(True)
-        self.progress_bar.setVisible(False)
+        # 現在表示されていないタブのデータ更新完了時の通知などは、必要ならここで行う
+        # 例: ステータスバーに「バックグラウンド更新完了」など
         
     def on_fetch_error(self, error_msg):
         """壁紙取得エラー時の処理"""
@@ -1088,11 +1130,18 @@ class BingWallpaperApp(QMainWindow):
         """タブ切り替え時の処理"""
         if index == 0:
             self.status_label.setText(tr("new_tab_msg"))
+            # データがあり、かつ空なら表示更新（バックグラウンド取得済みの場合用）
+            if self.wallpapers and self.gallery_layout.count() == 0:
+                self.populate_gallery()
+                
         elif index == 1:
             self.status_label.setText(tr("spotlight_tab_msg"))
-            # スポットライトタブに切り替えた際、まだ壁紙がなければ取得
-            if not self.spotlight_wallpapers:
-                QTimer.singleShot(500, self.fetch_wallpapers)
+            # データがあり、かつ空なら表示更新（バックグラウンド取得済みの場合用）
+            if self.spotlight_wallpapers and self.spotlight_gallery_layout.count() == 0:
+                self.populate_spotlight_gallery()
+            # データがなく、フェッチャーも動いていないなら取得（初回起動失敗時などの保険）
+            elif not self.spotlight_wallpapers and (not hasattr(self, 'fetcher_spotlight') or not self.fetcher_spotlight.isRunning()):
+                self.fetch_wallpapers("spotlight")
             
     def set_wallpaper(self):
         """デスクトップ壁紙を設定"""
