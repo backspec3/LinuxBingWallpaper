@@ -22,15 +22,30 @@ from PyQt6.QtWidgets import (
     QCheckBox, QComboBox, QSpacerItem, QSizePolicy, QTabWidget
 )
 from PyQt6.QtCore import (
-    Qt, QThread, pyqtSignal, QTimer, QPropertyAnimation, 
+    Qt, QObject, QThread, pyqtSignal, QTimer, QPropertyAnimation, 
     QEasingCurve, QRect, QSize, QSettings, QStandardPaths
 )
+from PyQt6.QtNetwork import QLocalServer, QLocalSocket
 from PyQt6.QtGui import (
     QPixmap, QIcon, QFont, QPalette, QColor, QAction,
     QPainter, QBrush, QLinearGradient, QMovie
 )
 
 from PIL import Image
+
+from translations import (
+    get_translation_manager, set_language, get_language,
+    __ as tr
+)
+
+# グローバル翻訳マネージャー
+translation_manager = get_translation_manager()
+
+# デフォルト言語を設定（QSettingsで保存された値があれば使用）
+from PyQt6.QtCore import QSettings as QSettingsCore
+_settings = QSettingsCore("BingWallpaper", "Settings")
+_saved_lang = _settings.value("language", "ja")
+set_language(_saved_lang)
 
 # ---------------------------------------------
 # アイコン関連ユーティリティ
@@ -145,6 +160,56 @@ def create_fallback_icon(size=64):
     
     painter.end()
     return QIcon(pixmap)
+
+class SingleInstance(QObject):
+    """単一インスタンス制御用クラス"""
+    activation_requested = pyqtSignal()
+
+    def __init__(self, key):
+        super().__init__()
+        self.key = key
+        self.server = None
+
+    def check_prev_instance(self):
+        """既存のインスタンスがあるか確認し、あればアクティブ化を要求してTrueを返す"""
+        socket = QLocalSocket()
+        socket.connectToServer(self.key)
+        
+        if socket.waitForConnected(500):
+            # 接続できた＝既存インスタンスあり
+            print("既存のインスタンスが見つかりました。アクティブ化を要求します。")
+            socket.write(b"SHOW")
+            socket.waitForBytesWritten(1000)
+            socket.disconnectFromServer()
+            return True
+        return False
+
+    def start_server(self):
+        """サーバーを開始して他からの接続を待機"""
+        # 前回の不正終了などで残っているファイルを削除
+        QLocalServer.removeServer(self.key)
+        
+        self.server = QLocalServer()
+        if not self.server.listen(self.key):
+            print(f"サーバー開始失敗: {self.server.errorString()}")
+            return False
+            
+        self.server.newConnection.connect(self.on_new_connection)
+        return True
+
+    def on_new_connection(self):
+        """新しい接続があった時の処理"""
+        while self.server.hasPendingConnections():
+            socket = self.server.nextPendingConnection()
+            socket.readyRead.connect(lambda s=socket: self.read_socket(s))
+
+    def read_socket(self, socket):
+        """ソケットからデータを読み込む"""
+        data = socket.readAll().data()
+        if b"SHOW" in data:
+            self.activation_requested.emit()
+        socket.disconnectFromServer()
+
 
 class WallpaperFetcher(QThread):
     """壁紙取得用ワーカースレッド"""
@@ -375,6 +440,10 @@ class BingWallpaperApp(QMainWindow):
         # 設定
         self.settings = QSettings("BingWallpaper", "Settings")
         
+        # 言語設定を取得
+        self.current_language = self.settings.value("language", "ja")
+        set_language(self.current_language)
+        
         self.setup_ui()
         self.setup_style()
         self.setup_system_tray()
@@ -387,7 +456,7 @@ class BingWallpaperApp(QMainWindow):
         
     def setup_ui(self):
         """UIの設定"""
-        self.setWindowTitle("Linux Bing Wallpaper")
+        self.setWindowTitle(tr("window_title"))
         self.setGeometry(200, 200, 1300, 800)  # 幅を1300に拡大
         self.setMinimumSize(1300, 700)  # 最小サイズを設定
         
@@ -425,7 +494,7 @@ class BingWallpaperApp(QMainWindow):
         title_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         
         # 現在の壁紙情報
-        current_group = QGroupBox("現在の壁紙")
+        current_group = QGroupBox(tr("current_wallpaper"))
         current_layout = QVBoxLayout()
         
         self.current_preview = QLabel()
@@ -439,9 +508,9 @@ class BingWallpaperApp(QMainWindow):
             }
         """)
         self.current_preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.current_preview.setText("壁紙を選択してください")
+        self.current_preview.setText(tr("select_wallpaper"))
         
-        self.current_title = QLabel("タイトル: 未選択")
+        self.current_title = QLabel(tr("title_label"))
         self.current_title.setWordWrap(True)
         
         current_layout.addWidget(self.current_preview)
@@ -449,20 +518,20 @@ class BingWallpaperApp(QMainWindow):
         current_group.setLayout(current_layout)
         
         # ボタン群
-        button_group = QGroupBox("操作")
+        button_group = QGroupBox(tr("operations"))
         button_layout = QVBoxLayout()
         
-        self.fetch_btn = QPushButton("🔄 壁紙を更新")
+        self.fetch_btn = QPushButton(tr("fetch_btn"))
         self.fetch_btn.clicked.connect(self.fetch_wallpapers)
         
-        self.set_btn = QPushButton("🖥️ 壁紙を設定")
+        self.set_btn = QPushButton(tr("set_btn"))
         self.set_btn.clicked.connect(self.set_wallpaper)
         self.set_btn.setEnabled(False)
         
-        self.folder_btn = QPushButton("📁 フォルダを開く")
+        self.folder_btn = QPushButton(tr("folder_btn"))
         self.folder_btn.clicked.connect(self.open_folder)
         
-        self.auto_checkbox = QCheckBox("自動更新 (毎日)")
+        self.auto_checkbox = QCheckBox(tr("auto_update"))
         self.auto_checkbox.setChecked(True)  # 標準でオン
         self.auto_checkbox.toggled.connect(self.toggle_auto_update)
         
@@ -473,22 +542,41 @@ class BingWallpaperApp(QMainWindow):
         button_group.setLayout(button_layout)
         
         # デスクトップ環境設定
-        desktop_group = QGroupBox("デスクトップ環境")
+        desktop_group = QGroupBox(tr("desktop_env"))
         desktop_layout = QVBoxLayout()
         
         self.desktop_combo = QComboBox()
-        self.desktop_combo.addItems(["自動検出", "GNOME", "KDE", "XFCE", "COSMIC", "その他 (feh)"])
+        self.desktop_combo.addItems([
+            tr("auto_detect"), tr("gnome"), tr("kde"), 
+            tr("xfce"), tr("cosmic"), tr("other")
+        ])
         
-        desktop_layout.addWidget(QLabel("デスクトップ環境:"))
+        desktop_layout.addWidget(QLabel(tr("desktop_env_label")))
         desktop_layout.addWidget(self.desktop_combo)
         desktop_group.setLayout(desktop_layout)
+        
+        # 言語設定
+        language_group = QGroupBox(tr("language"))
+        language_layout = QVBoxLayout()
+        
+        self.language_combo = QComboBox()
+        self.language_combo.addItems([tr("japanese"), tr("english")])
+        # 現在の言語を反映
+        if self.current_language == "en":
+            self.language_combo.setCurrentIndex(1)
+        else:
+            self.language_combo.setCurrentIndex(0)
+        self.language_combo.currentIndexChanged.connect(self.on_language_changed)
+        
+        language_layout.addWidget(self.language_combo)
+        language_group.setLayout(language_layout)
         
         # プログレスバー
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
         
         # ステータス
-        self.status_label = QLabel("準備完了")
+        self.status_label = QLabel(tr("ready"))
         self.status_label.setStyleSheet("""
             QLabel {
                 padding: 8px;
@@ -508,6 +596,7 @@ class BingWallpaperApp(QMainWindow):
         layout.addWidget(button_group)
         layout.addSpacing(10)
         layout.addWidget(desktop_group)
+        layout.addWidget(language_group)
         layout.addStretch()
         layout.addWidget(self.progress_bar)
         layout.addWidget(self.status_label)
@@ -521,7 +610,7 @@ class BingWallpaperApp(QMainWindow):
         layout = QVBoxLayout()
         
         # ギャラリータイトル
-        gallery_title = QLabel("壁紙ギャラリー")
+        gallery_title = QLabel(tr("gallery_title"))
         gallery_title.setFont(QFont("Arial", 14, QFont.Weight.Bold))
         
         # タブウィジェット
@@ -562,8 +651,8 @@ class BingWallpaperApp(QMainWindow):
         spotlight_tab.setLayout(spotlight_layout)
         
         # タブに追加
-        self.tab_widget.addTab(new_tab, "新着")
-        self.tab_widget.addTab(spotlight_tab, "オススメ")
+        self.tab_widget.addTab(new_tab, tr("new_tab"))
+        self.tab_widget.addTab(spotlight_tab, tr("spotlight_tab"))
         
         # タブ切り替え時のイベント
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
@@ -759,7 +848,7 @@ class BingWallpaperApp(QMainWindow):
         """システムトレイの設定"""
         if QSystemTrayIcon.isSystemTrayAvailable():
             self.tray_icon = QSystemTrayIcon(self)
-            self.tray_icon.setToolTip("Bing Wallpaper")
+            self.tray_icon.setToolTip(tr("tray_tooltip"))
             
             # アイコンを設定
             tray_icon = get_app_icon(32)  # トレイ用は小さめのアイコン
@@ -768,18 +857,31 @@ class BingWallpaperApp(QMainWindow):
             # システムトレイメニュー
             tray_menu = QMenu()
             
-            show_action = QAction("表示", self)
+            show_action = QAction(tr("show"), self)
             show_action.triggered.connect(self.show)
             
-            fetch_action = QAction("壁紙を更新", self)
+            fetch_action = QAction(tr("fetch_btn"), self)
             fetch_action.triggered.connect(self.fetch_wallpapers)
             
-            quit_action = QAction("終了", self)
+            # 言語メニュー
+            language_menu = QMenu(tr("language"), self)
+            
+            ja_action = QAction(tr("japanese"), self)
+            ja_action.triggered.connect(lambda: self.change_language("ja"))
+            language_menu.addAction(ja_action)
+            
+            en_action = QAction(tr("english"), self)
+            en_action.triggered.connect(lambda: self.change_language("en"))
+            language_menu.addAction(en_action)
+            
+            quit_action = QAction(tr("quit"), self)
             quit_action.triggered.connect(QApplication.instance().quit)
             
             tray_menu.addAction(show_action)
             tray_menu.addSeparator()
             tray_menu.addAction(fetch_action)
+            tray_menu.addSeparator()
+            tray_menu.addMenu(language_menu)
             tray_menu.addSeparator()
             tray_menu.addAction(quit_action)
             
@@ -801,6 +903,58 @@ class BingWallpaperApp(QMainWindow):
                 self.show()
                 self.raise_()
                 self.activateWindow()
+    
+    def activate_window(self):
+        """外部からの要求でウィンドウをアクティブ化"""
+        self.show()
+        if self.isMinimized():
+            self.showNormal()
+        self.raise_()
+        self.activateWindow()
+
+    
+    def change_language(self, language):
+        """言語を変更"""
+        set_language(language)
+        self.current_language = language
+        self.settings.setValue("language", language)
+        
+        # UIを再構築して言語を反映
+        self.refresh_ui()
+    
+    def on_language_changed(self, index):
+        """言語コンボボックスの変更イベント"""
+        if index == 0:
+            self.change_language("ja")
+        elif index == 1:
+            self.change_language("en")
+    
+    def refresh_ui(self):
+        """UIのテキストを再構築して言語を反映"""
+        # ウィンドウタイトル
+        self.setWindowTitle(tr("window_title"))
+        
+        # ボタンと他のUI要素のテキストを更新
+        self.fetch_btn.setText(tr("fetch_btn"))
+        self.set_btn.setText(tr("set_btn"))
+        self.folder_btn.setText(tr("folder_btn"))
+        self.auto_checkbox.setText(tr("auto_update"))
+        self.status_label.setText(tr("ready"))
+        
+        # タブテキストを更新
+        self.tab_widget.setTabText(0, tr("new_tab"))
+        self.tab_widget.setTabText(1, tr("spotlight_tab"))
+        
+        # 現在のプレビュータイトルを更新
+        if not self.current_wallpaper or not self.current_title.text() or self.current_title.text() == tr("title_label"):
+            self.current_preview.setText(tr("select_wallpaper"))
+            self.current_title.setText(tr("title_label"))
+        else:
+            # 既に選択されている場合は、タイトル部分は保持してラベルだけ更新
+            title_text = self.current_title.text()
+            if ": " in title_text:
+                title_part = title_text.split(": ", 1)[1]
+                self.current_title.setText(f"タイトル: {title_part}")
         
     def fetch_wallpapers(self):
         """壁紙を更新して取得"""
@@ -812,10 +966,10 @@ class BingWallpaperApp(QMainWindow):
         wallpaper_type = "spotlight" if current_tab == 1 else "new"
         
         if wallpaper_type == "spotlight":
-            self.status_label.setText("スポットライト壁紙を取得中...")
+            self.status_label.setText(tr("fetching_spotlight"))
             self.clear_spotlight_gallery()
         else:
-            self.status_label.setText("壁紙を取得中...")
+            self.status_label.setText(tr("fetching_wallpapers"))
             self.clear_gallery()
         
         # ワーカースレッドで取得
@@ -833,11 +987,11 @@ class BingWallpaperApp(QMainWindow):
         if current_tab == 1:  # スポットライトタブ
             self.spotlight_wallpapers = result['wallpapers']
             self.populate_spotlight_gallery()
-            self.status_label.setText(f"✅ {len(self.spotlight_wallpapers)}枚のスポットライト壁紙を取得しました")
+            self.status_label.setText(tr("fetched_success_spotlight", count=len(self.spotlight_wallpapers)))
         else:  # 新着タブ
             self.wallpapers = result['wallpapers']
             self.populate_gallery()
-            self.status_label.setText(f"✅ {len(self.wallpapers)}枚の壁紙を取得しました")
+            self.status_label.setText(tr("fetched_success", count=len(self.wallpapers)))
         
         self.fetch_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
@@ -846,9 +1000,9 @@ class BingWallpaperApp(QMainWindow):
         """壁紙取得エラー時の処理"""
         self.fetch_btn.setEnabled(True)
         self.progress_bar.setVisible(False)
-        self.status_label.setText(f"❌ エラー: {error_msg}")
+        self.status_label.setText(tr("error_prefix") + error_msg)
         
-        QMessageBox.critical(self, "エラー", f"壁紙の取得に失敗しました:\n{error_msg}")
+        QMessageBox.critical(self, tr("error"), tr("set_wallpaper_failed", error=error_msg))
         
     def on_fetch_progress(self, message):
         """進捗更新"""
@@ -928,14 +1082,14 @@ class BingWallpaperApp(QMainWindow):
             # 設定ボタンを有効化
             self.set_btn.setEnabled(True)
             
-            self.status_label.setText(f"壁紙を選択: {selected_info['title'][:30]}...")
+            self.status_label.setText(tr("selected_wallpaper", title=selected_info['title'][:30]))
     
     def on_tab_changed(self, index):
         """タブ切り替え時の処理"""
         if index == 0:
-            self.status_label.setText("新着壁紙タブ")
+            self.status_label.setText(tr("new_tab_msg"))
         elif index == 1:
-            self.status_label.setText("スポットライト壁紙タブ")
+            self.status_label.setText(tr("spotlight_tab_msg"))
             # スポットライトタブに切り替えた際、まだ壁紙がなければ取得
             if not self.spotlight_wallpapers:
                 QTimer.singleShot(500, self.fetch_wallpapers)
@@ -943,11 +1097,11 @@ class BingWallpaperApp(QMainWindow):
     def set_wallpaper(self):
         """デスクトップ壁紙を設定"""
         if not self.current_wallpaper:
-            QMessageBox.warning(self, "警告", "設定する壁紙を選択してください")
+            QMessageBox.warning(self, tr("warning"), tr("no_wallpaper_selected"))
             return
             
         try:
-            self.status_label.setText("壁紙を設定中...")
+            self.status_label.setText(tr("setting_wallpaper"))
             
             # デスクトップ環境を取得
             desktop_env = self.get_desktop_environment()
@@ -982,12 +1136,12 @@ class BingWallpaperApp(QMainWindow):
                         subprocess.run(["killall", "-HUP", "cosmic-bg"], 
                                      capture_output=True, timeout=5)
                         
-                        self.status_label.setText("✅ 壁紙を設定しました（COSMIC）")
+                        self.status_label.setText(tr("wallpaper_set_success_cosmic"))
                         
                         if hasattr(self, 'tray_icon'):
                             self.tray_icon.showMessage(
-                                "壁紙設定完了",
-                                "Bing壁紙を設定しました",
+                                tr("notification_title"),
+                                tr("notification_msg"),
                                 QSystemTrayIcon.MessageIcon.Information,
                                 3000
                             )
@@ -1109,12 +1263,12 @@ class BingWallpaperApp(QMainWindow):
                     
                     time.sleep(4)  # 十分に待機
                     
-                    self.status_label.setText("✅ 壁紙を設定しました")
+                    self.status_label.setText(tr("wallpaper_set_success"))
                     
                     if hasattr(self, 'tray_icon'):
                         self.tray_icon.showMessage(
-                            "壁紙設定完了",
-                            "Bing壁紙を設定しました",
+                            tr("notification_title"),
+                            tr("notification_msg"),
                             QSystemTrayIcon.MessageIcon.Information,
                             3000
                         )
@@ -1133,12 +1287,12 @@ class BingWallpaperApp(QMainWindow):
                         if which_result.returncode == 0:
                             result = subprocess.run(fb_cmd, capture_output=True, text=True, timeout=10)
                             if result.returncode == 0:
-                                self.status_label.setText("✅ 壁紙を設定しました")
+                                self.status_label.setText(tr("wallpaper_set_success"))
                                 
                                 if hasattr(self, 'tray_icon'):
                                     self.tray_icon.showMessage(
-                                        "壁紙設定完了",
-                                        "Bing壁紙を設定しました",
+                                        tr("notification_title"),
+                                        tr("notification_msg"),
                                         QSystemTrayIcon.MessageIcon.Information,
                                         3000
                                     )
@@ -1177,13 +1331,13 @@ class BingWallpaperApp(QMainWindow):
             result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0:
-                self.status_label.setText("✅ 壁紙を設定しました")
+                self.status_label.setText(tr("wallpaper_set_success"))
                 
                 # システムトレイに通知（ダイアログなし）
                 if hasattr(self, 'tray_icon'):
                     self.tray_icon.showMessage(
-                        "壁紙設定完了",
-                        "Bing壁紙を設定しました",
+                        tr("notification_title"),
+                        tr("notification_msg"),
                         QSystemTrayIcon.MessageIcon.Information,
                         3000
                     )
@@ -1191,15 +1345,14 @@ class BingWallpaperApp(QMainWindow):
                 raise Exception(f"コマンド実行エラー: {result.stderr}")
                 
         except subprocess.TimeoutExpired:
-            self.status_label.setText("❌ タイムアウト")
-            QMessageBox.critical(self, "エラー", "壁紙設定がタイムアウトしました")
+            self.status_label.setText(tr("timeout"))
+            QMessageBox.critical(self, tr("error"), tr("timeout_msg"))
         except FileNotFoundError:
-            self.status_label.setText("❌ コマンドが見つかりません")
-            QMessageBox.critical(self, "エラー", f"必要なコマンドが見つかりません\n"
-                               f"デスクトップ環境: {desktop_env}")
+            self.status_label.setText(tr("command_not_found"))
+            QMessageBox.critical(self, tr("error"), tr("command_not_found_msg", env=desktop_env))
         except Exception as e:
-            self.status_label.setText("❌ 設定失敗")
-            QMessageBox.critical(self, "エラー", f"壁紙の設定に失敗しました:\n{str(e)}")
+            self.status_label.setText(tr("setting_failed"))
+            QMessageBox.critical(self, tr("error"), tr("set_wallpaper_failed", error=str(e)))
             
     def get_desktop_environment(self):
         """デスクトップ環境を検出"""
@@ -1227,9 +1380,9 @@ class BingWallpaperApp(QMainWindow):
         """壁紙フォルダを開く"""
         try:
             subprocess.run(['xdg-open', str(self.wallpaper_dir)], check=True)
-            self.status_label.setText("📁 フォルダを開きました")
+            self.status_label.setText(tr("folder_opened"))
         except subprocess.CalledProcessError:
-            QMessageBox.critical(self, "エラー", "フォルダを開けませんでした")
+            QMessageBox.critical(self, tr("error"), tr("folder_open_failed"))
             
     def toggle_auto_update(self, checked):
         """自動更新の切り替え"""
@@ -1239,11 +1392,11 @@ class BingWallpaperApp(QMainWindow):
                 self.auto_timer.start(24 * 60 * 60 * 1000)  # 24時間
             else:
                 self.setup_auto_update()
-            self.status_label.setText("⏰ 自動更新を有効にしました")
+            self.status_label.setText(tr("auto_update_on"))
         else:
             if hasattr(self, 'auto_timer'):
                 self.auto_timer.stop()
-            self.status_label.setText("自動更新を無効にしました")
+            self.status_label.setText(tr("auto_update_off"))
             
     def closeEvent(self, event):
         """ウィンドウ閉じる時の処理"""
@@ -1257,16 +1410,32 @@ class BingWallpaperApp(QMainWindow):
 def main():
     """メイン関数"""
     app = QApplication(sys.argv)
-    app.setApplicationName("Bing Wallpaper")
-    app.setApplicationVersion("2.0")
-    app.setOrganizationName("LinuxWallpaper")
+    app.setApplicationName(tr("app_name"))
+    app.setApplicationVersion(tr("app_version"))
+    app.setOrganizationName(tr("organization"))
     
     # アプリケーションアイコン設定
     app_icon = get_app_icon(64)
     app.setWindowIcon(app_icon)
     
+    # 二重起動チェック
+    # ユーザーごとに一意になるようユーザー名を含めるか、固定キーにする
+    instance_key = "LinuxBingWallpaper_Instance_Key_v1"
+    single_instance = SingleInstance(instance_key)
+    
+    if single_instance.check_prev_instance():
+        # 既存インスタンスがあるので終了
+        sys.exit(0)
+    
+    if not single_instance.start_server():
+        print("警告: 単一インスタンスサーバーの開始に失敗しました")
+    
     # メインウィンドウ作成
     window = BingWallpaperApp()
+    
+    # アクティブ化シグナルを接続
+    single_instance.activation_requested.connect(window.activate_window)
+    
     window.show()
     
     # システムトレイアイコン表示
