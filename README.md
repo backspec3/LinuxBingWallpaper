@@ -1,248 +1,61 @@
-# LinuxWallpaper - Bing壁紙自動設定アプリ
+# Linux Bing Wallpaper
 
-Linux用Bing壁紙自動設定アプリケーション
-
-![Python](https://img.shields.io/badge/python-v3.8+-blue.svg)
-![PyQt6](https://img.shields.io/badge/PyQt6-GUI-green.svg)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
-
-## 概要
-
-LinuxBingWallpaperは、MicrosoftのBing日替わり壁紙を自動的に取得し、Linux環境でデスクトップ壁紙として設定するPyQt6アプリケーションです。
+Linux用のBing壁紙自動取得・設定アプリケーションです。
+最新のWebテクノロジー (React / Vite) と、高速で軽量なRustベースの [Tauri](https://tauri.app/) フレームワークを使用して再構築されました。
 
 ![アプリのスクリーンショット](screenshots/LinuxWallpaperImage.png)
+*(※スクリーンショットのパスは適宜置き換えてください)*
 
-### 主な機能
+## 特徴
 
-- 📸 **最新のBing壁紙を8枚取得** - Bing公式APIから高画質壁紙を自動ダウンロード
-- 🖼️ **プレビュー機能** - 壁紙をグリッド形式で確認してから設定
-- 🎨 **複数DE対応** - GNOME、KDE、XFCE、LXQt、その他のデスクトップ環境に対応
-- ⏰ **自動更新機能** - 24時間ごとに新しい壁紙を自動取得
-- 🔄 **システムトレイ** - バックグラウンド動作とトレイアイコン
-- 📁 **壁紙管理** - ローカルフォルダでの壁紙ファイル管理
-- 🌐 **マルチ言語対応** - 日本語/英語をワンクリックで切り替え可能
-
+- 📸 **最新＆アーカイブ壁紙の取得**: Bingの最新壁紙およびSpotlightアーカイブから高画質の壁紙を取得します。
+- 🖼️ **美しいプレビュー**: React + Tailwind CSSによるモダンなUIで壁紙のプレビューをサクサク確認できます。
+- 🎨 **マルチデスクトップ環境対応**: GNOME, KDE Plasma, XFCE, COSMIC などの主要なデスクトップ環境での壁紙設定に対応（自動検出機能付き。その他の環境は `feh` による設定をサポート）。
+- ⚡ **軽量・高速**: Rustバックエンドの採用により、従来のPython/PyQt6版と比べて劇的に動作が軽く、バイナリサイズも小さくなりました。
 
 ## 必要条件
 
-### システム要件
-- Python 3.8以上
-- Linux OS（Ubuntu、Fedora、openSUSE、Arch Linux等）
-- インターネット接続
-- デスクトップ環境（GNOME、KDE、XFCE、LXQt等）
+ビルドおよび実行には以下の環境が必要です。
 
-### 必要なパッケージ
-```bash
-# Ubuntu/Debian
-sudo apt install python3-pip python3-pyqt6 python3-pil
+- **Node.js** (推奨: v18以上)
+- **Rust / Cargo**
+- **Tauri の Linux 依存関係** (WebKit2GTK など)
+  - Ubuntu / Debian 系の例: 
+    ```bash
+    sudo apt update
+    sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+    ```
 
-# Fedora
-sudo dnf install python3-pip python3-PyQt6 python3-pillow
+## インストールと起動
 
-# Arch Linux
-sudo pacman -S python-pip python-pyqt6 python-pillow
-
-# openSUSE
-sudo zypper install python3-pip python3-qt6 python3-Pillow
-```
-
-## インストール
-
-### 1. リポジトリのクローン
-```bash
-git clone https://github.com/backspec3/LinuxWallpaper.git
-cd LinuxWallpaper
-```
-
-### 2. 依存関係のインストール
-```bash
-pip3 install -r requirements.txt
-```
-
-または手動でインストール：
-```bash
-pip3 install PyQt6 Pillow requests
-```
-
-### 3. 実行権限の付与
-```bash
-chmod +x main.py
-```
-
-## 使用方法
-
-### 基本的な使い方
-
-1. **アプリケーションの起動**
+1. **リポジトリのクローン (またはディレクトリへの移動)**
    ```bash
-   python3 main.py
+   git clone <repository-url>
+   cd LinuxBingWallpaper
    ```
 
-2. **壁紙の取得**
-   - 「壁紙を取得」ボタンをクリック
-   - Bingから最新の8枚の壁紙を自動ダウンロード
-
-3. **壁紙の設定**
-   - プレビューグリッドから気に入った壁紙をクリック
-   - 壁紙に設定ボタンでデスクトップ壁紙として設定
-
-4. **自動更新の有効化**
-   - 「自動更新」チェックボックスを有効化
-   - 24時間ごとに新しい壁紙を自動取得
-
-### 詳細機能
-
-- **フォルダを開く**: ダウンロードした壁紙ファイルを確認
-- **システムトレイ**: ウィンドウを閉じてもバックグラウンドで動作
-- **設定の自動保存**: 次回起動時に設定を復元
-- **言語切り替え**: システムトレイメニューから日本語/英語を切り替え可能
-
-## 対応デスクトップ環境
-
-KDE環境でのみテストしています、他のデスクトップ環境での動作はテスト出来ていません
-| デスクトップ環境 | 対応状況 | 設定方法 |
-|---|---|---|
-| GNOME | ✅ 対応 | gsettings |
-| KDE Plasma | ✅ 完全対応 | qdbus |
-| XFCE | ✅ 対応 | xfconf-query |
-| LXQt | ✅ 対応 | pcmanfm-qt |
-| Cinnamon | ✅ 対応 | gsettings |
-| MATE | ✅ 対応 | gsettings |
-| その他 | 🔶 部分対応 | feh使用 |
-
-## ファイル構成
-
-```
-LinuxWallpaper/
-├── main.py              # メインアプリケーション
-├── README.md            # このファイル
-├── requirements.txt     # Python依存関係
-└── wallpapers/         # 壁紙保存フォルダ（自動作成）
-    ├── bing_wallpaper_20250101.jpg
-    ├── bing_wallpaper_20250102.jpg
-    └── ...
-```
-
-## 設定ファイル
-
-設定は以下に自動保存されます：
-- `~/.config/LinuxWallpaper/settings.ini`
-
-## トラブルシューティング
-
-### よくある問題と解決方法
-
-1. **PyQt6がインストールできない**
+2. **依存パッケージのインストール**
    ```bash
-   # システムパッケージマネージャーを使用
-   sudo apt install python3-pyqt6  # Ubuntu
-   sudo dnf install python3-PyQt6  # Fedora
+   npm install
    ```
 
-2. **壁紙が設定されない**
-   - デスクトップ環境を確認
-   - 必要なツール（gsettings、qdbus等）がインストールされているか確認
-
-3. **インターネット接続エラー**
-   - ファイアウォール設定を確認
-   - プロキシ環境の場合は環境変数を設定
-
-4. **権限エラー**
+3. **開発サーバーの起動**
    ```bash
-   chmod +x main.py
-   chmod -R 755 ~/.config/LinuxWallpaper/
+   npm run tauri dev
    ```
+   *(※Wayland環境で画面が真っ白になる場合は環境変数をつけて実行してください: `WEBKIT_DISABLE_DMABUF_RENDERER=1 npm run tauri dev`)*
 
-### ログとデバッグ
+4. **本番用ビルド**
+   ```bash
+   npm run tauri build
+   ```
+   ビルドが成功すると、`src-tauri/target/release/bundle/` 配下に AppImage や DEB パッケージなどが生成されます。
 
-アプリケーションは標準出力にログを出力します：
-```bash
-python3 main.py 2>&1 | tee wallpaper.log
-```
+## 使用している主な技術スタック
 
-## 開発者向け情報
-
-### アーキテクチャ
-
-- **WallpaperFetcher**: Bing APIからの壁紙取得を担当するワーカースレッド
-- **WallpaperWidget**: 個別壁紙のプレビューウィジェット
-- **BingWallpaperApp**: メインアプリケーションウィンドウ
-
-### APIエンドポイント
-
-```python
-# Bing壁紙API（8枚取得）
-api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=ja-JP"
-```
-
-### 拡張とカスタマイズ
-
-新しいデスクトップ環境のサポートを追加する場合：
-
-```python
-def detect_desktop_environment(self):
-    """デスクトップ環境の検出"""
-    # 新しい環境の検出ロジックを追加
-    
-def set_wallpaper_your_de(self, image_path):
-    """新しいDE用の壁紙設定"""
-    # 壁紙設定コマンドを実装
-```
+- **Frontend**: React, TypeScript, Vite, Tailwind CSS, Lucide React
+- **Backend**: Rust, Tauri
 
 ## ライセンス
 
-MIT License - 詳細は[LICENSE](LICENSE)ファイルを参照してください。
-
-
-## 作者
-
-- **backspec3** - [GitHub](https://github.com/backspec3)
-
-## 言語対応
-
-このアプリケーションは日本語と英語に対応しており、ワンクリックで言語を切り替えられます。
-
-### 言語の切り替え方法
-
-1. **システムトレイから切り替え**
-   - トレイアイコンを右クリック
-   - 「言語」→「日本語」または「English」を選択
-   - UIが即座に言語を反映します
-
-2. **言語選択の保存**
-   - 選択した言語は自動的に保存されます
-   - 次回起動時に前回選択した言語が復元されます
-
-### 対応言語
-
-- 🇯🇵 **日本語** (Default)
-- 🇺🇸 **English**
-
----
-
-## 謝辞
-
-- Microsoft Bingチーム - 美しい壁紙の提供
-- PyQt6コミュニティ - 優秀なGUIフレームワーク
-- Linuxコミュニティ - オープンソースエコシステム
-
-## 更新履歴
-
-### v2.1 (2025-12-30)
-- マルチ言語対応（日本語/英語）
-- 言語設定の保存・復元機能
-- システムトレイからの言語切り替え
-
-### v2.0 (2025-9-28)
-- PyQt6への移行
-- 8枚壁紙同時表示機能
-- システムトレイサポート
-- 自動更新機能
-
-### v1.0 (2025-9-20)
-- 初回リリース
-- 基本的な壁紙取得・設定機能
-
----
-
-⭐ このプロジェクトが気に入ったら、ぜひスターを付けてください！
+MIT License

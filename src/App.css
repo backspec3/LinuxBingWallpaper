@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand: #2196F3;
+  --color-brand-hover: #1976D2;
+  --color-background: #1e1e1e;
+  --color-surface: #2d2d2d;
+  --color-surface-hover: #404040;
+}
+
+body {
+  background-color: var(--color-background);
+  color: white;
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  overflow: hidden;
+}
+
+#root {
+  width: 100vw;
+  height: 100vh;
+  margin: 0;
+  padding: 0;
+}
+
+* {
+  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+}
+
+/* Force dark theme for select elements on Linux/WebKit */
+select {
+  background-color: #1e1e1e !important;
+  color: white !important;
+  appearance: none !important;
+}
+
+option {
+  background-color: #1e1e1e !important;
+  color: white !important;
+}
