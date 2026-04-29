@@ -3,15 +3,17 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::process::Command;
 
+// フロントエンドに返す壁紙データの構造体
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Wallpaper {
-    pub path: String,
-    pub title: String,
-    pub copyright: String,
-    pub date: String,
-    pub url: String,
+    pub path: String,       // ローカルに保存された画像のファイルパス
+    pub title: String,      // 画像のタイトル
+    pub copyright: String,  // 著作権情報
+    pub date: String,       // 画像の日付
+    pub url: String,        // リモートの画像URL
 }
 
+// Bing APIから返される個々の画像データの構造体
 #[derive(Serialize, Deserialize, Debug)]
 struct BingImage {
     url: String,
@@ -20,36 +22,45 @@ struct BingImage {
     startdate: String,
 }
 
+// Bing APIのレスポンス全体の構造体
 #[derive(Serialize, Deserialize, Debug)]
 struct BingResponse {
     images: Vec<BingImage>,
 }
 
+// 最新のBing壁紙を取得するコマンド
 #[tauri::command]
 async fn fetch_new_wallpapers() -> Result<Vec<Wallpaper>, String> {
+    // Bingの公式APIエンドポイント（直近8日分の画像、日本市場向け）
     let api_url = "https://www.bing.com/HPImageArchive.aspx?format=js&idx=0&n=8&mkt=ja-JP";
     let client = reqwest::Client::new();
     let res = client.get(api_url).send().await.map_err(|e| e.to_string())?;
     let data: BingResponse = res.json().await.map_err(|e| e.to_string())?;
 
+    // 保存先ディレクトリの設定 (デフォルトは ~/Pictures/BingWallpapers)
     let wallpaper_dir = dirs::picture_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap().join("Pictures"))
         .join("BingWallpapers");
 
+    // ディレクトリが存在しない場合は作成する
     fs::create_dir_all(&wallpaper_dir).map_err(|e| e.to_string())?;
 
     let mut wallpapers = Vec::new();
 
     for img in data.images {
+        // 画像の完全なURLを構築
         let image_url = format!("https://www.bing.com{}", img.url);
+        // 保存するファイル名を生成（日付ベース）
         let filename = format!("bing_wallpaper_{}.jpg", img.startdate);
         let file_path = wallpaper_dir.join(&filename);
 
+        // ファイルがまだ存在しない場合のみダウンロードして保存
         if !file_path.exists() {
             let img_bytes = client.get(&image_url).send().await.map_err(|e| e.to_string())?.bytes().await.map_err(|e| e.to_string())?;
             fs::write(&file_path, img_bytes).map_err(|e| e.to_string())?;
         }
 
+        // フロントエンドに返すリストに追加
         wallpapers.push(Wallpaper {
             path: file_path.to_string_lossy().to_string(),
             title: img.title,
@@ -62,15 +73,18 @@ async fn fetch_new_wallpapers() -> Result<Vec<Wallpaper>, String> {
     Ok(wallpapers)
 }
 
+// スポットライトのアーカイブ壁紙を取得するコマンド
 #[tauri::command]
 async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
+    // サードパーティのBing壁紙アーカイブAPIエンドポイント
     let archive_url = "https://bing.npanuhin.me/JP/ja.json";
     let client = reqwest::Client::new();
     let res = client.get(archive_url).send().await.map_err(|e| e.to_string())?;
     
-    // Parse array of JSON objects
+    // JSONの配列をパース
     let data: Vec<serde_json::Value> = res.json().await.map_err(|e| e.to_string())?;
 
+    // 保存先ディレクトリの設定
     let wallpaper_dir = dirs::picture_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap().join("Pictures"))
         .join("BingWallpapers");
@@ -79,6 +93,7 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
 
     let mut wallpapers = Vec::new();
     
+    // 取得した画像リストからランダムに8枚を選択
     let mut selected_images = data;
     {
         use rand::seq::SliceRandom;
@@ -88,18 +103,22 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
     let selected_images = selected_images.into_iter().take(8);
 
     for img in selected_images {
+        // URLが取得できない場合はスキップ
         let image_url = match img.get("url").and_then(|u| u.as_str()) {
             Some(u) => u.to_string(),
             None => continue,
         };
         
+        // メタデータの取得（存在しない場合のフォールバックも設定）
         let title = img.get("title").and_then(|t| t.as_str()).unwrap_or("不明").to_string();
         let copyright = img.get("copyright").and_then(|c| c.as_str()).unwrap_or("").to_string();
         let date = img.get("date").and_then(|d| d.as_str()).unwrap_or("unknown").to_string();
         
+        // ファイル名の生成
         let filename = format!("bing_archive_{}.jpg", date.replace("-", ""));
         let file_path = wallpaper_dir.join(&filename);
 
+        // まだ存在しない場合のみダウンロードを試みる
         if !file_path.exists() {
             if let Ok(res) = client.get(&image_url).send().await {
                 if let Ok(bytes) = res.bytes().await {
@@ -108,6 +127,7 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
             }
         }
 
+        // ファイルが正常に存在する場合のみリストに追加
         if file_path.exists() {
             wallpapers.push(Wallpaper {
                 path: file_path.to_string_lossy().to_string(),
@@ -122,9 +142,12 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
     Ok(wallpapers)
 }
 
+// 選択した壁紙をデスクトップの背景として設定するコマンド
 #[tauri::command]
 fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
+    // デスクトップ環境が「自動検出」の場合の処理
     if env == "auto_detect" {
+        // 環境変数から現在のデスクトップ環境を推測
         let xdg = std::env::var("XDG_CURRENT_DESKTOP").unwrap_or_default().to_lowercase();
         let desktop_session = std::env::var("DESKTOP_SESSION").unwrap_or_default().to_lowercase();
         
@@ -141,8 +164,10 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
         }
     }
 
+    // 各デスクトップ環境に応じた壁紙設定コマンドを実行
     match env.as_str() {
         "gnome" => {
+            // GNOME環境：ライトモード用とダークモード用の両方に壁紙を設定
             Command::new("gsettings")
                 .args(&["set", "org.gnome.desktop.background", "picture-uri", &format!("file://{}", path)])
                 .output()
@@ -153,12 +178,14 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
                 .map_err(|e| e.to_string())?;
         },
         "kde" => {
+            // KDE Plasma環境
             Command::new("plasma-apply-wallpaperimage")
                 .arg(&path)
                 .output()
                 .map_err(|e| e.to_string())?;
         },
         "xfce" => {
+            // XFCE環境：xfconf-queryを使用して設定を書き換える
             let output = Command::new("xfconf-query")
                 .args(&["-c", "xfce4-desktop", "-l"])
                 .output()
@@ -167,6 +194,7 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
             let output_str = String::from_utf8_lossy(&output.stdout);
             let mut found = false;
             
+            // プロパティリストから "last-image" を探して更新
             for line in output_str.lines() {
                 if line.contains("last-image") {
                     let _ = Command::new("xfconf-query")
@@ -181,6 +209,7 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
             }
         },
         "cosmic" => {
+            // COSMIC環境：設定ファイルを直接パース・書き換えしてリロードさせる
             let config_dir = dirs::home_dir().unwrap().join(".config").join("cosmic").join("com.system76.CosmicBackground").join("v1");
             let config_file = config_dir.join("all");
             
@@ -189,13 +218,15 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
                     let re = regex::Regex::new(r#"source:\s*Path\(".*?"\)"#).unwrap();
                     let new_content = re.replace(&content, format!("source: Path(\"{}\")", path).as_str());
                     let _ = fs::write(&config_file, new_content.as_bytes());
+                    // 変更を適用するために cosmic-bg をリロード
                     let _ = Command::new("killall").args(&["-HUP", "cosmic-bg"]).output();
                 }
             } else {
                  return Err("COSMIC config not found".to_string());
             }
         },
-        _ => { // "other" (using feh as fallback)
+        _ => { 
+            // その他の環境（フォールバック）：汎用的な画像ビューア「feh」を使用して背景を設定
             let _ = Command::new("feh")
                 .args(&["--bg-scale", &path])
                 .output()
@@ -206,18 +237,21 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
     Ok(())
 }
 
+// 壁紙が保存されているフォルダを開くコマンド
 #[tauri::command]
 async fn open_wallpaper_dir() -> Result<(), String> {
     let wallpaper_dir = dirs::picture_dir()
         .unwrap_or_else(|| dirs::home_dir().unwrap().join("Pictures"))
         .join("BingWallpapers");
     
+    // フォルダが存在しない場合は作成
     if !wallpaper_dir.exists() {
         fs::create_dir_all(&wallpaper_dir).map_err(|e| e.to_string())?;
     }
 
     #[cfg(target_os = "linux")]
     {
+        // Linuxの標準コマンド xdg-open を使ってフォルダを開く
         Command::new("xdg-open")
             .arg(&wallpaper_dir)
             .spawn()
@@ -227,10 +261,13 @@ async fn open_wallpaper_dir() -> Result<(), String> {
     Ok(())
 }
 
+// アプリケーションのエントリーポイント
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // ブラウザなどの外部リンクを開くためのプラグインを初期化
         .plugin(tauri_plugin_opener::init())
+        // フロントエンドから呼び出せるコマンドを登録
         .invoke_handler(tauri::generate_handler![
             fetch_new_wallpapers,
             fetch_spotlight_wallpapers,
