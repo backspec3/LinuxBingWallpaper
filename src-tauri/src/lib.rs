@@ -1,7 +1,77 @@
 use reqwest;
 use serde::{Deserialize, Serialize};
 use std::fs;
+use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
+
+// 保存する壁紙の最大数。通常・スポットライトの画像を合算して管理する。
+const MAX_SAVED_WALLPAPERS: usize = 20;
+
+struct SavedWallpaper {
+    path: PathBuf,
+    date: Option<String>,
+    modified: SystemTime,
+}
+
+// ファイル名に含まれる YYYYMMDD を取り出す。日付がない旧形式のファイルは更新日時で扱う。
+fn wallpaper_date_from_filename(filename: &str) -> Option<String> {
+    let date = filename
+        .strip_prefix("bing_wallpaper_")
+        .or_else(|| filename.strip_prefix("bing_archive_"))?
+        .strip_suffix(".jpg")?;
+
+    if date.len() == 8 && date.bytes().all(|byte| byte.is_ascii_digit()) {
+        Some(date.to_string())
+    } else {
+        None
+    }
+}
+
+// アプリが保存した画像だけを対象に、撮影日が新しい20枚を残す。
+fn cleanup_old_wallpapers(wallpaper_dir: &Path) -> Result<(), String> {
+    let mut saved_wallpapers = fs::read_dir(wallpaper_dir)
+        .map_err(|e| e.to_string())?
+        .filter_map(Result::ok)
+        .filter_map(|entry| {
+            let path = entry.path();
+            let filename = path.file_name()?.to_str()?;
+            let is_saved_wallpaper = (filename.starts_with("bing_wallpaper_")
+                || filename.starts_with("bing_archive_"))
+                && filename.ends_with(".jpg");
+            if !is_saved_wallpaper {
+                return None;
+            }
+
+            let date = wallpaper_date_from_filename(filename);
+            let modified = entry
+                .metadata()
+                .ok()?
+                .modified()
+                .unwrap_or(SystemTime::UNIX_EPOCH);
+
+            Some(SavedWallpaper {
+                path,
+                date,
+                modified,
+            })
+        })
+        .collect::<Vec<_>>();
+
+    // 日付が新しい順、同日の場合は更新日時が新しい順に並べる。
+    saved_wallpapers.sort_by(|left, right| {
+        right
+            .date
+            .cmp(&left.date)
+            .then_with(|| right.modified.cmp(&left.modified))
+    });
+
+    for wallpaper in saved_wallpapers.into_iter().skip(MAX_SAVED_WALLPAPERS) {
+        fs::remove_file(wallpaper.path).map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
 
 // フロントエンドに返す壁紙データの構造体
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -70,6 +140,9 @@ async fn fetch_new_wallpapers() -> Result<Vec<Wallpaper>, String> {
         });
     }
 
+    cleanup_old_wallpapers(&wallpaper_dir)?;
+    wallpapers.retain(|wallpaper| Path::new(&wallpaper.path).exists());
+
     Ok(wallpapers)
 }
 
@@ -80,7 +153,7 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
     let archive_url = "https://bing.npanuhin.me/JP/ja.json";
     let client = reqwest::Client::new();
     let res = client.get(archive_url).send().await.map_err(|e| e.to_string())?;
-    
+
     // JSONの配列をパース
     let data: Vec<serde_json::Value> = res.json().await.map_err(|e| e.to_string())?;
 
@@ -139,6 +212,9 @@ async fn fetch_spotlight_wallpapers() -> Result<Vec<Wallpaper>, String> {
         }
     }
 
+    cleanup_old_wallpapers(&wallpaper_dir)?;
+    wallpapers.retain(|wallpaper| Path::new(&wallpaper.path).exists());
+
     Ok(wallpapers)
 }
 
@@ -190,7 +266,7 @@ fn set_wallpaper(path: String, mut env: String) -> Result<(), String> {
                 .args(&["-c", "xfce4-desktop", "-l"])
                 .output()
                 .map_err(|e| e.to_string())?;
-            
+
             let output_str = String::from_utf8_lossy(&output.stdout);
             let mut found = false;
             
@@ -257,7 +333,7 @@ async fn open_wallpaper_dir() -> Result<(), String> {
             .spawn()
             .map_err(|e| e.to_string())?;
     }
-    
+
     Ok(())
 }
 
@@ -276,4 +352,25 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::wallpaper_date_from_filename;
+
+    #[test]
+    fn extracts_dates_from_managed_wallpaper_filenames() {
+        assert_eq!(
+            wallpaper_date_from_filename("bing_wallpaper_20260809.jpg").as_deref(),
+            Some("20260809")
+        );
+        assert_eq!(
+            wallpaper_date_from_filename("bing_archive_20200102.jpg").as_deref(),
+            Some("20200102")
+        );
+        assert_eq!(
+            wallpaper_date_from_filename("bing_archive_unknown.jpg"),
+            None
+        );
+    }
 }
